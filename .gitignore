@@ -1,0 +1,8 @@
+token.pickle
+__pycache__/
+.vscode/
+.DS_Store
+code/
+dsm_milestone2.pdf
+credentials.json
+.venv/
