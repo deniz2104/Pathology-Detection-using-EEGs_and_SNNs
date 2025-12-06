@@ -1,0 +1,8 @@
+FOLDER_NAME : str = 'ds005516'
+SCOPES : list[str] = ['https://www.googleapis.com/auth/drive']
+FOLDER_TO_KEEP :str = 'participants'
+FORMATS_TO_KEEP : list[str] = ['.csv', '.tsv']
+SUBJECTS_PREFIX :str = 'sub-'
+ACCEPTED_TASKS : list[str] = ['RestingState', 'DespicableMe', 'ThePresent', 'FunwithFractals', 'DiaryOfAWimpyKid', 'symbolSearch']
+EEG_FOLDER : str = 'eeg'
+EEG_FILE_EXTENSION : str = '.set'
