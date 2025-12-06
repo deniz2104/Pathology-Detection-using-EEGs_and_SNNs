@@ -6,3 +6,4 @@ SUBJECTS_PREFIX :str = 'sub-'
 ACCEPTED_TASKS : list[str] = ['RestingState', 'DespicableMe', 'ThePresent', 'FunwithFractals', 'DiaryOfAWimpyKid', 'symbolSearch']
 EEG_FOLDER : str = 'eeg'
 EEG_FILE_EXTENSION : str = '.set'
+EEG_FOLDER_LINKS_CSV : str = 'eeg_folder_links.csv'

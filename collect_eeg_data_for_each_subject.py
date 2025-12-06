@@ -2,14 +2,17 @@ from gather_list_of_subjects import get_list_of_subjects
 from get_google_drive_service import get_google_drive_service
 from get_target_folder_from_google_drive import get_target_folder_from_google_drive
 from constants import SUBJECTS_PREFIX,EEG_FOLDER
+import pandas as pd
+
+def make_csv_file_to_store_eeg_links(subjects_data):
+    df = pd.DataFrame(subjects_data)
+    df.to_csv('eeg_folder_links.csv', index=False)
 
 def collect_eeg_files():
-    eeg_folder_links = {}
-    
     target_folder = get_target_folder_from_google_drive()
     if not target_folder:
         print("Target folder not found")
-        return eeg_folder_links
+        return None
     
     main_folder_id = target_folder[0]['id']
     service = get_google_drive_service()
@@ -34,6 +37,8 @@ def collect_eeg_files():
             break
     
     subjects = get_list_of_subjects()
+
+    subject_data = []
     
     for subject in subjects:
         subject_folder_name = f"{SUBJECTS_PREFIX}{subject}"
@@ -57,13 +62,9 @@ def collect_eeg_files():
 
         eeg_folder = eeg_folders[0]
         eeg_folder_id = eeg_folder['id']
-    
-        eeg_folder_links[subject] = {
-            'folder_id': eeg_folder_id
-        }
 
-    return eeg_folder_links
+        subject_data.append({'Subject': subject, 'EEG Folder ID': eeg_folder_id })
 
-
-if __name__ == "__main__":
-    eeg_folders = collect_eeg_files()
+    make_csv_file_to_store_eeg_links(subject_data)
+    with open("constants.py", "a") as f:
+        f.write("\nEEG_FOLDER_LINKS_CSV : str = 'eeg_folder_links.csv'\n")
