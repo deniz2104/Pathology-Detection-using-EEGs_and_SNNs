@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import mne
+import matplotlib.pyplot as plt
 import tempfile
 import numpy as np
 
@@ -10,7 +11,6 @@ from collect_eeg_data_for_each_subject import collect_eeg_files
 from gather_list_of_subjects import get_list_of_subjects
 from get_google_drive_service import get_google_drive_service
 import constants
-import matplotlib.pyplot as plt
 
 class EEGPreprocessingPipeline:
     def __init__(self, subject_folder_id):
@@ -89,5 +89,103 @@ class EEGPreprocessingPipeline:
                 })
 
         return raw_data
+    
+    def print_filter_info(self, eeg_raw):
+        print("\n--- Filter Info ---")
+        print("Highpass filter:", eeg_raw.info['highpass'], "Hz")
+        print("Lowpass filter:", eeg_raw.info['lowpass'], "Hz")
+        print("Line frequency (powerline):", eeg_raw.info['line_freq'], "Hz")
+        print("Sampling frequency:", eeg_raw.info['sfreq'], "Hz")
+        print("Total samples:", eeg_raw.n_times)
+        print("Data shape (channels × samples):", eeg_raw.get_data().shape)
+        print("Recording duration (s):", eeg_raw.times[-1])
 
+    def print_channel_info(self, eeg_raw):
+        first_ch = eeg_raw.info['chs'][0]
+        print(f"Channel '{first_ch['ch_name']}' unit: {first_ch['unit']} (FIFF constant)")
+        print(f"Channel '{first_ch['ch_name']}' coil type: {first_ch['coil_type']}")
+        print(f"Hardware Range: {first_ch['range']}")
+        print(f"Calibration Factor: {first_ch['cal']}")
+        print(f"Loc (Physical coordinates): {first_ch['loc']}")
+
+    def print_montage_info(self, eeg_raw):
+        montage = eeg_raw.get_montage()
+        print(montage)
+
+    def print_file_metadata(self, eeg_raw):
+        print("\n--- File Metadata ---")
+        print("Filename:", eeg_raw.filenames)
+        print("\n--- Data Info ---")
+        print("Has data loaded:", eeg_raw.preload)
+
+    def print_signal_quality(self, eeg_raw):
+        print("\n--- Signal Quality ---")
+        print("Channel types:", eeg_raw.get_channel_types())
+        print("Bad channels:", eeg_raw.info['bads'])
+
+    def print_annotations(self, eeg_raw):
+        print("\n--- Events ---")
+        print("Annotations:", eeg_raw.annotations)
+        if len(eeg_raw.annotations) > 0:
+            print("\n--- Annotation Details ---")
+            print("Descriptions:", eeg_raw.annotations.description)
+            print("Onsets (seconds):", eeg_raw.annotations.onset)
+            print("Durations:", eeg_raw.annotations.duration)
+
+        print("Internal first sample index:", eeg_raw.first_samp)
+        print("Internal last sample index:", eeg_raw.last_samp)
+
+    def identify_dead_channels(self, eeg_raw):
+        list_of_dead_channels = []
+        for ch in eeg_raw.ch_names:
+            data, _ = eeg_raw[ch]
+            peak_to_peak = np.ptp(data)
+            if peak_to_peak <= 1e-7:
+                list_of_dead_channels.append(ch)
+        return list_of_dead_channels
+
+    def print_channel_statistics(self, eeg_raw):
+        data = eeg_raw.get_data()
+        stds = np.std(data, axis=1)
+        dead_channels = np.where(stds == 0)[0]
+        living_channels = np.where(stds > 0)[0]
+
+        print(f"Total Channels: {len(stds)}")
+        print(f"Dead (Flat) Channels: {len(dead_channels)}")
+        print(f"Living (Active) Channels: {len(living_channels)}")
+
+        list_of_dead_channels = self.identify_dead_channels(eeg_raw)
+        if list_of_dead_channels:
+            print("\nSummary of Dead Channels:")
+            for dead_ch in list_of_dead_channels:
+                print(f" - {dead_ch}")
+
+    def print_eeg_summary(self, eeg_raw):
+        self.print_filter_info(eeg_raw)
+        self.print_channel_info(eeg_raw)
+        self.print_montage_info(eeg_raw)
+        self.print_file_metadata(eeg_raw)
+        self.print_signal_quality(eeg_raw)
+        self.print_annotations(eeg_raw)
+        self.print_channel_statistics(eeg_raw)
+
+    def plot_sensor_locations(self, eeg_raw):
+        fig = eeg_raw.plot_sensors(kind='3d', show_names=True, title="GSN 129 Sensors")
+        fig.savefig("eeg_plots/gsn_129_sensors_3d.png", dpi=300, bbox_inches='tight')
+
+    def plot_sensor_topomap(self, eeg_raw):
+        fig = eeg_raw.plot_sensors(kind='topomap', show_names=True, title="GSN 129 Topomap")
+        fig.savefig("eeg_plots/gsn_129_topomap.png", dpi=300, bbox_inches='tight')
+
+
+def main():
+    subjects = get_list_of_subjects()
+    for subject in subjects[:1]:
+        pipeline = EEGPreprocessingPipeline(subject)
         
+        raw_data = pipeline.process_raw_eeg_data()
+    
+    plt.show()
+
+if __name__ == "__main__":
+    main()

@@ -8,3 +8,5 @@ numpy
 seaborn
 matplotlib
 scipy
+pyvista 
+pyvistaqt
