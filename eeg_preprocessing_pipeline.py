@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import tempfile
 import numpy as np
 
-from io import BytesIO
 from googleapiclient.http import MediaIoBaseDownload
 from collect_eeg_data_for_each_subject import collect_eeg_files
 from gather_list_of_subjects import get_list_of_subjects
@@ -174,6 +173,10 @@ class EEGPreprocessingPipeline:
             
         return eeg_raw
     
+    def apply_bandpass_filter(self, eeg_raw, l_freq=1.0, h_freq=None):
+        eeg_raw.filter(l_freq=l_freq, h_freq=h_freq)
+        return eeg_raw
+
     def set_eeg_reference(self, eeg_raw):
         eeg_raw.set_eeg_reference('average', projection=False)
         return eeg_raw
@@ -186,12 +189,18 @@ class EEGPreprocessingPipeline:
         eeg_raw.notch_filter(freqs=[60.0,120.0,180.0], picks = 'eeg', method='fir', filter_length='auto', phase='zero')
         return eeg_raw
 
+    def make_eeg_plots_directory(self):
+        if not os.path.exists("eeg_plots"):
+            os.makedirs("eeg_plots")
+
     def plot_sensor_locations(self, eeg_raw):
         fig = eeg_raw.plot_sensors(kind='3d', show_names=True, title="GSN 129 Sensors")
+        self.make_eeg_plots_directory()
         fig.savefig("eeg_plots/gsn_129_sensors_3d.png", dpi=300, bbox_inches='tight')
 
     def plot_sensor_topomap(self, eeg_raw):
         fig = eeg_raw.plot_sensors(kind='topomap', show_names=True, title="GSN 129 Topomap")
+        self.make_eeg_plots_directory()
         fig.savefig("eeg_plots/gsn_129_topomap.png", dpi=300, bbox_inches='tight')
     
     def select_important_frequency_bands(self, eeg_raw):
@@ -233,7 +242,8 @@ class EEGPreprocessingPipeline:
         return eeg_raw
     
     def detect_bads_pyprep(self, eeg_raw):
-        nd = NoisyChannels(eeg_raw)
+        filtered_eeg_raw = self.apply_bandpass_filter(eeg_raw.copy())
+        nd = NoisyChannels(filtered_eeg_raw)
         nd.find_all_bads(ransac=True)
         eeg_raw.info['bads'] = nd.get_bads()
         if 'Cz' in eeg_raw.info['bads']:
@@ -253,10 +263,11 @@ def main():
             eeg_raw = pipeline.fix_scaling_units(eeg_raw)
             eeg_raw = pipeline.make_montage(eeg_raw)
             eeg_raw = pipeline.detect_bads_pyprep(eeg_raw)
+            eeg_raw = pipeline.interpolate_bad_channels(eeg_raw)
             eeg_raw = pipeline.apply_notch_filter(eeg_raw)
             eeg_raw = pipeline.sanitize_channel_names(eeg_raw)
             eeg_raw = pipeline.set_eeg_reference(eeg_raw)
-            eeg_raw = pipeline.interpolate_bad_channels(eeg_raw)
+            
             pipeline.plot_power_spectral_density(eeg_raw)
 
     plt.show()
