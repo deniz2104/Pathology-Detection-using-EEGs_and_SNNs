@@ -10,3 +10,4 @@ matplotlib
 scipy
 pyvista 
 pyvistaqt
+pyprep

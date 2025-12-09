@@ -21,5 +21,5 @@ def get_google_drive_service():
         with open('token.pickle', 'wb') as token:   
             pickle.dump(creds, token)
 
-    service = build('drive', 'v3', credentials=creds)
+    service = build('drive', 'v3', credentials=creds,cache_discovery=False,static_discovery=True)
     return service
