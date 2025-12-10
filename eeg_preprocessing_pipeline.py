@@ -6,7 +6,7 @@ import tempfile
 import numpy as np
 import constants
 
-from mne.preprocessing import ICA
+from mne_icalabel import label_components
 from googleapiclient.http import MediaIoBaseDownload
 from collect_eeg_data_for_each_subject import collect_eeg_files
 from gather_list_of_subjects import get_list_of_subjects
@@ -181,43 +181,56 @@ class EEGPreprocessingPipeline:
         max_val = np.max(np.abs(data))
         
         if max_val > 1.0: 
-            print(f"DETECTED SCALING ERROR: Values are too large for Volts.")
-            print(f"Likely in microvolts (uV). Scaling by 1e-6...")
+            print(f"Values are too large for Volts.")
+            print(f"Scaling by 1e-6...")
             eeg_raw.apply_function(lambda x: x * 1e-6)
             
         elif max_val > 0.01 and max_val <= 1.0:
-            print(f"DETECTED SCALING ERROR: Values look like millivolts (mV).")
+            print(f"Values look like millivolts (mV).")
             print(f"Scaling by 1e-3...")
             eeg_raw.apply_function(lambda x: x * 1e-3)
             
         else:
-            print("✅ Scaling looks correct (Standard EEG amplitude range).")
+            print("Scaling looks correct")
             
         return eeg_raw
+
+    def create_epochs(self, eeg_raw, events, event_id, tmin=-0.2, tmax=0.8, baseline=(None, 0)):
+        
+        epochs = mne.Epochs(
+            eeg_raw, events, event_id,
+            tmin=tmin, tmax=tmax,
+            baseline=baseline,
+            preload=True,
+            reject=None
+        )
+        return epochs
     
-    def detect_artifacts_with_ica(self, eeg_raw,n_components=40):
+    def detect_automatically_artifacts_with_ica(self, eeg_raw):
         if not eeg_raw.preload:
             eeg_raw.load_data()
         
         eeg_filtered = self.apply_bandpass_filter(eeg_raw.copy())
+
+        ica_obj = mne.preprocessing.ICA(
+            n_components=0.99,
+            method='infomax',
+            max_iter="auto",
+            random_state=42,
+            fit_params=dict(extended=True)).fit(eeg_filtered)
         
-        if not eeg_filtered.preload:
-            eeg_filtered.load_data()
-
-        ica = ICA(n_components=n_components, method='fastica', random_state=42, max_iter='auto')
-        ica.fit(eeg_filtered)
-
-        ica.plot_sources(eeg_filtered, title='ICA Sources - Time Series')
-
-        for i in range(n_components):
-            try:
-                ica.plot_properties(eeg_filtered, picks=[i], show=False)
-            except Exception as e:
-                print(f"Could not plot properties for component {i}: {e}")
-        
-        return ica, eeg_raw
+        ic_labels = label_components(eeg_filtered, ica_obj, method="iclabel")
     
-    def apply_bandpass_filter(self, eeg_raw, l_freq=1.0, h_freq=None):
+        labels = ic_labels["labels"]
+
+        exclude_categories = ['eye', 'muscle artifact', 'heart beat', 'line noise', 'channel noise']
+        exclude_indices = [i for i, label in enumerate(labels) if label in exclude_categories]
+        ica_obj.exclude = exclude_indices
+        ica_obj.apply(eeg_raw)
+
+        return eeg_raw
+    
+    def apply_bandpass_filter(self, eeg_raw, l_freq=1.0, h_freq=100.0):
         if not eeg_raw.preload:
             eeg_raw.load_data()
         eeg_raw.filter(l_freq=l_freq, h_freq=h_freq)
@@ -232,7 +245,7 @@ class EEGPreprocessingPipeline:
         return eeg_raw
     
     def apply_notch_filter(self, eeg_raw):
-        eeg_raw.notch_filter(freqs=[60.0,120.0,180.0], picks = 'eeg', method='fir', filter_length='auto', phase='zero')
+        eeg_raw.notch_filter(freqs=[60.0,120.0], picks = 'eeg', method='fir', filter_length='auto', phase='zero')
         return eeg_raw
 
     def make_eeg_plots_directory(self):
@@ -259,15 +272,17 @@ class EEGPreprocessingPipeline:
             }
         
         eeg_data = {}
-        for band_name, (fmin, fmax) in bands.items():
-            filtered = eeg_raw.copy().filter(l_freq=fmin, h_freq=fmax)
-            eeg_data[band_name] = filtered
+        for band_name, (l_freq, h_freq) in bands.items():
+            eeg_data[band_name] = eeg_raw.copy().filter(l_freq=l_freq, h_freq=h_freq)
         
         return eeg_data
     
+    def extract_events(self, eeg_raw):
+        events, _ = mne.events_from_annotations(eeg_raw)
+        return events
+    
     def detect_bads_pyprep(self, eeg_raw):
-        filtered_eeg_raw = self.apply_bandpass_filter(eeg_raw.copy())
-        nd = NoisyChannels(filtered_eeg_raw)
+        nd = NoisyChannels(eeg_raw)
         nd.find_all_bads(ransac=True)
         eeg_raw.info['bads'] = nd.get_bads()
         if 'Cz' in eeg_raw.info['bads']:
@@ -282,17 +297,27 @@ def main():
         
         raw_data = pipeline.process_raw_eeg_data()
         for eeg_entry in raw_data:
-            eeg_raw = eeg_entry['raw']
-            print(f"\n=== Summary for {eeg_entry['filename']} ===")            
+            eeg_raw = eeg_entry['raw']        
             try:
+                pipeline.print_filter_info(eeg_raw)
                 eeg_raw = pipeline.fix_scaling_units(eeg_raw)
                 eeg_raw = pipeline.make_montage(eeg_raw)
+
+                events = pipeline.extract_events(eeg_raw)
+
+                eeg_raw, events = eeg_raw.resample(eeg_raw.info['sfreq'] // 2, events=events)
+
+                eeg_raw = pipeline.apply_bandpass_filter(eeg_raw)
                 eeg_raw = pipeline.detect_bads_pyprep(eeg_raw)
+                
                 eeg_raw = pipeline.interpolate_bad_channels(eeg_raw)
                 eeg_raw = pipeline.apply_notch_filter(eeg_raw)
+                
                 eeg_raw = pipeline.sanitize_channel_names(eeg_raw)
                 eeg_raw = pipeline.set_eeg_reference(eeg_raw)
-                _, eeg_raw = pipeline.detect_artifacts_with_ica(eeg_raw)
+                pipeline.detect_automatically_artifacts_with_ica(eeg_raw)
+            
+            
             finally:
                 if hasattr(eeg_raw, '_temp_file_path'):
                     if os.path.exists(eeg_raw._temp_file_path):
