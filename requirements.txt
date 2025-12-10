@@ -11,3 +11,4 @@ scipy
 pyvista 
 pyvistaqt
 pyprep
+scikit-learn

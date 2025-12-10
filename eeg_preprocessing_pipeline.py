@@ -4,12 +4,13 @@ import mne
 import matplotlib.pyplot as plt
 import tempfile
 import numpy as np
+import constants
 
+from mne.preprocessing import ICA
 from googleapiclient.http import MediaIoBaseDownload
 from collect_eeg_data_for_each_subject import collect_eeg_files
 from gather_list_of_subjects import get_list_of_subjects
 from get_google_drive_service import get_google_drive_service
-import constants
 from pyprep.find_noisy_channels import NoisyChannels
 
 class EEGPreprocessingPipeline:
@@ -52,27 +53,28 @@ class EEGPreprocessingPipeline:
             
             print(f"Streaming {filename} from Google Drive...")
             
-            with tempfile.NamedTemporaryFile(suffix='.set', delete=False) as tmp:
-                downloader = MediaIoBaseDownload(tmp, request)
-                
-                done = False
-                while not done:
-                    status, done = downloader.next_chunk()
-                    if status:
-                        print(f"  Downloaded {int(status.progress() * 100)}%")
-                
-                tmp_path = tmp.name
+            tmp = tempfile.NamedTemporaryFile(suffix='.set', delete=False)
+            downloader = MediaIoBaseDownload(tmp, request)
+            
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+                if status:
+                    print(f"  Downloaded {int(status.progress() * 100)}%")
+            
+            tmp.close()
+            tmp_path = tmp.name
 
-            print(f"Reading EEG data from {filename}...")
-            try:
-                raw = mne.io.read_raw_eeglab(tmp_path, preload=True)
-                return raw
-            finally:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
+            raw = mne.io.read_raw_eeglab(tmp_path, preload=True)
+            
+            raw._temp_file_path = tmp_path
+            
+            return raw
             
         except Exception as e:
             print(f"✗ Error preprocessing {filename}: {str(e)}")
+            if 'tmp_path' in locals() and os.path.exists(tmp_path):
+                os.remove(tmp_path)
             return None
         
     def process_raw_eeg_data(self):
@@ -173,7 +175,51 @@ class EEGPreprocessingPipeline:
             
         return eeg_raw
     
+    def fix_scaling_units(self, eeg_raw):
+        data = eeg_raw.get_data()
+        
+        max_val = np.max(np.abs(data))
+        
+        if max_val > 1.0: 
+            print(f"DETECTED SCALING ERROR: Values are too large for Volts.")
+            print(f"Likely in microvolts (uV). Scaling by 1e-6...")
+            eeg_raw.apply_function(lambda x: x * 1e-6)
+            
+        elif max_val > 0.01 and max_val <= 1.0:
+            print(f"DETECTED SCALING ERROR: Values look like millivolts (mV).")
+            print(f"Scaling by 1e-3...")
+            eeg_raw.apply_function(lambda x: x * 1e-3)
+            
+        else:
+            print("✅ Scaling looks correct (Standard EEG amplitude range).")
+            
+        return eeg_raw
+    
+    def detect_artifacts_with_ica(self, eeg_raw,n_components=40):
+        if not eeg_raw.preload:
+            eeg_raw.load_data()
+        
+        eeg_filtered = self.apply_bandpass_filter(eeg_raw.copy())
+        
+        if not eeg_filtered.preload:
+            eeg_filtered.load_data()
+
+        ica = ICA(n_components=n_components, method='fastica', random_state=42, max_iter='auto')
+        ica.fit(eeg_filtered)
+
+        ica.plot_sources(eeg_filtered, title='ICA Sources - Time Series')
+
+        for i in range(n_components):
+            try:
+                ica.plot_properties(eeg_filtered, picks=[i], show=False)
+            except Exception as e:
+                print(f"Could not plot properties for component {i}: {e}")
+        
+        return ica, eeg_raw
+    
     def apply_bandpass_filter(self, eeg_raw, l_freq=1.0, h_freq=None):
+        if not eeg_raw.preload:
+            eeg_raw.load_data()
         eeg_raw.filter(l_freq=l_freq, h_freq=h_freq)
         return eeg_raw
 
@@ -219,28 +265,6 @@ class EEGPreprocessingPipeline:
         
         return eeg_data
     
-    def fix_scaling_units(self, eeg_raw):
-        data = eeg_raw.get_data()
-        
-        max_val = np.max(np.abs(data))
-        
-        if max_val > 1.0: 
-            print(f"DETECTED SCALING ERROR: Values are too large for Volts.")
-            print(f"Likely in microvolts (uV). Scaling by 1e-6...")
-            eeg_raw.apply_function(lambda x: x * 1e-6)
-            print(f"   ✅ New Max: {np.max(np.abs(eeg_raw.get_data())):.5e} V")
-            
-        elif max_val > 0.01 and max_val <= 1.0:
-            print(f"DETECTED SCALING ERROR: Values look like millivolts (mV).")
-            print(f"Scaling by 1e-3...")
-            eeg_raw.apply_function(lambda x: x * 1e-3)
-            print(f"   ✅ New Max: {np.max(np.abs(eeg_raw.get_data())):.5e} V")
-            
-        else:
-            print("✅ Scaling looks correct (Standard EEG amplitude range).")
-            
-        return eeg_raw
-    
     def detect_bads_pyprep(self, eeg_raw):
         filtered_eeg_raw = self.apply_bandpass_filter(eeg_raw.copy())
         nd = NoisyChannels(filtered_eeg_raw)
@@ -260,15 +284,20 @@ def main():
         for eeg_entry in raw_data:
             eeg_raw = eeg_entry['raw']
             print(f"\n=== Summary for {eeg_entry['filename']} ===")            
-            eeg_raw = pipeline.fix_scaling_units(eeg_raw)
-            eeg_raw = pipeline.make_montage(eeg_raw)
-            eeg_raw = pipeline.detect_bads_pyprep(eeg_raw)
-            eeg_raw = pipeline.interpolate_bad_channels(eeg_raw)
-            eeg_raw = pipeline.apply_notch_filter(eeg_raw)
-            eeg_raw = pipeline.sanitize_channel_names(eeg_raw)
-            eeg_raw = pipeline.set_eeg_reference(eeg_raw)
-            
-            pipeline.plot_power_spectral_density(eeg_raw)
+            try:
+                eeg_raw = pipeline.fix_scaling_units(eeg_raw)
+                eeg_raw = pipeline.make_montage(eeg_raw)
+                eeg_raw = pipeline.detect_bads_pyprep(eeg_raw)
+                eeg_raw = pipeline.interpolate_bad_channels(eeg_raw)
+                eeg_raw = pipeline.apply_notch_filter(eeg_raw)
+                eeg_raw = pipeline.sanitize_channel_names(eeg_raw)
+                eeg_raw = pipeline.set_eeg_reference(eeg_raw)
+                _, eeg_raw = pipeline.detect_artifacts_with_ica(eeg_raw)
+            finally:
+                if hasattr(eeg_raw, '_temp_file_path'):
+                    if os.path.exists(eeg_raw._temp_file_path):
+                        os.remove(eeg_raw._temp_file_path)
+                        print(f"Cleaned up temp file: {eeg_raw._temp_file_path}")
 
     plt.show()
 
