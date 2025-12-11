@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import tempfile
 import numpy as np
 import constants
+from sklearn.preprocessing import StandardScaler
 
 from mne_icalabel import label_components
 from googleapiclient.http import MediaIoBaseDownload
@@ -195,15 +196,19 @@ class EEGPreprocessingPipeline:
             
         return eeg_raw
 
-    def create_epochs(self, eeg_raw, events, event_id, tmin=-0.2, tmax=0.8, baseline=(None, 0)):
+    def create_epochs(self, eeg_raw, events, event_id, tmin=0, tmax=4.0, baseline=(None, 0)):
         
-        epochs = mne.Epochs(
-            eeg_raw, events, event_id,
-            tmin=tmin, tmax=tmax,
-            baseline=baseline,
-            preload=True,
-            reject=None
-        )
+        epochs = mne.Epochs(eeg_raw, events, event_id=event_id, tmin=tmin, tmax=tmax, baseline=baseline, preload=True, reject = None)
+        return epochs
+    
+    def normalize_epochs_for_snn(self, epochs):
+        data = epochs.get_data()
+        
+        for i in range(len(data)):
+            scaler = StandardScaler()
+            data[i] = scaler.fit_transform(data[i].T).T
+            
+        epochs._data = data
         return epochs
     
     def detect_automatically_artifacts_with_ica(self, eeg_raw):
@@ -303,7 +308,7 @@ def main():
                 eeg_raw = pipeline.fix_scaling_units(eeg_raw)
                 eeg_raw = pipeline.make_montage(eeg_raw)
 
-                events = pipeline.extract_events(eeg_raw)
+                events, event_id_map = pipeline.extract_events(eeg_raw)
 
                 eeg_raw, events = eeg_raw.resample(eeg_raw.info['sfreq'] // 2, events=events)
 
@@ -316,6 +321,14 @@ def main():
                 eeg_raw = pipeline.sanitize_channel_names(eeg_raw)
                 eeg_raw = pipeline.set_eeg_reference(eeg_raw)
                 pipeline.detect_automatically_artifacts_with_ica(eeg_raw)
+
+                epochs = pipeline.create_epochs(
+                    eeg_raw, 
+                    events, 
+                    event_id=event_id_map
+                )
+
+                epochs = pipeline.normalize_epochs_for_snn(epochs)
             
             
             finally:
