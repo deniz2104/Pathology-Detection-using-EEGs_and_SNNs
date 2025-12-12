@@ -1,13 +1,15 @@
 import os
+from pyexpat import features
 import pandas as pd
 import mne
 import matplotlib.pyplot as plt
 import tempfile
 import numpy as np
 import constants
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 from mne_icalabel import label_components
+from mne.time_frequency import psd_array_welch
 from googleapiclient.http import MediaIoBaseDownload
 from collect_eeg_data_for_each_subject import collect_eeg_files
 from gather_list_of_subjects import get_list_of_subjects
@@ -136,11 +138,6 @@ class EEGPreprocessingPipeline:
         print("Internal first sample index:", eeg_raw.first_samp)
         print("Internal last sample index:", eeg_raw.last_samp)
 
-    def make_montage(self, eeg_raw):
-        montage = mne.channels.make_standard_montage('GSN-HydroCel-129')
-        eeg_raw.set_montage(montage, match_case=False)
-        return eeg_raw
-
     def print_channel_statistics(self, eeg_raw):
         data = eeg_raw.get_data()
         stds = np.std(data, axis=1)
@@ -159,6 +156,11 @@ class EEGPreprocessingPipeline:
         self.print_signal_quality(eeg_raw)
         self.print_annotations(eeg_raw)
         self.print_channel_statistics(eeg_raw)
+
+    def make_montage(self, eeg_raw):
+        montage = mne.channels.make_standard_montage('GSN-HydroCel-129')
+        eeg_raw.set_montage(montage, match_case=False)
+        return eeg_raw
 
     def plot_power_spectral_density(self, eeg_raw, duration=4.0):
         sfreq = eeg_raw.info['sfreq']
@@ -196,7 +198,7 @@ class EEGPreprocessingPipeline:
             
         return eeg_raw
 
-    def create_epochs(self, eeg_raw, events, event_id, tmin=0, tmax=4.0, baseline=(None, 0)):
+    def create_epochs(self, eeg_raw, events, event_id, tmin=0, tmax=4.0, baseline=(0, 0)):
         
         epochs = mne.Epochs(eeg_raw, events, event_id=event_id, tmin=tmin, tmax=tmax, baseline=baseline, preload=True, reject = None)
         return epochs
@@ -217,13 +219,7 @@ class EEGPreprocessingPipeline:
         
         eeg_filtered = self.apply_bandpass_filter(eeg_raw.copy())
 
-        ica_obj = mne.preprocessing.ICA(
-            n_components=0.99,
-            method='infomax',
-            max_iter="auto",
-            random_state=42,
-            fit_params=dict(extended=True)).fit(eeg_filtered)
-        
+        ica_obj = mne.preprocessing.ICA(n_components=0.99,method='infomax',max_iter="auto",random_state=constants.RANDOM_SEED,fit_params=dict(extended=True)).fit(eeg_filtered)
         ic_labels = label_components(eeg_filtered, ica_obj, method="iclabel")
     
         labels = ic_labels["labels"]
@@ -235,7 +231,7 @@ class EEGPreprocessingPipeline:
 
         return eeg_raw
     
-    def apply_bandpass_filter(self, eeg_raw, l_freq=1.0, h_freq=100.0):
+    def apply_bandpass_filter(self, eeg_raw, l_freq=constants.LOW_PASS_FILTER_HZ, h_freq=constants.HIGH_PASS_FILTER_HZ):
         if not eeg_raw.preload:
             eeg_raw.load_data()
         eeg_raw.filter(l_freq=l_freq, h_freq=h_freq)
@@ -250,7 +246,7 @@ class EEGPreprocessingPipeline:
         return eeg_raw
     
     def apply_notch_filter(self, eeg_raw):
-        eeg_raw.notch_filter(freqs=[60.0,120.0], picks = 'eeg', method='fir', filter_length='auto', phase='zero')
+        eeg_raw.notch_filter(freqs=constants.NOTCH_FILTER_FREQUENCIES, picks = 'eeg', method='fir', filter_length='auto', phase='zero')
         return eeg_raw
 
     def make_eeg_plots_directory(self):
@@ -267,7 +263,10 @@ class EEGPreprocessingPipeline:
         self.make_eeg_plots_directory()
         fig.savefig("eeg_plots/gsn_129_topomap.png", dpi=300, bbox_inches='tight')
     
-    def select_important_frequency_bands(self, eeg_raw):
+    def select_important_frequency_bands(self, epochs):
+        sfreq = epochs.info['sfreq']
+        data = epochs.get_data()
+
         bands = {
             'Delta': (0.5, 4),
             'Theta': (4, 8),
@@ -276,15 +275,43 @@ class EEGPreprocessingPipeline:
             'Gamma': (30, 100)
             }
         
-        eeg_data = {}
-        for band_name, (l_freq, h_freq) in bands.items():
-            eeg_data[band_name] = eeg_raw.copy().filter(l_freq=l_freq, h_freq=h_freq)
-        
-        return eeg_data
+        n_epochs, n_channels, _ = data.shape
+        n_bands = len(bands)
+        features = np.zeros((n_epochs, n_channels, n_bands))
+
+        for epoch in range(n_epochs):
+            for channel in range(n_channels):
+                psd, freqs = psd_array_welch(data[epoch, channel], sfreq=sfreq, fmin=min(band[0] for band in bands.values()), fmax=max(band[1] for band in bands.values()), n_fft=512)
+                for j, (_, (fmin, fmax)) in enumerate(bands.items()):
+                    idx_band = np.logical_and(freqs >= fmin, freqs <= fmax)
+                    features[epoch, channel, j] = np.mean(psd[idx_band])
+
+        return features
     
+    def min_max_scale_features(self, features):
+        n_epochs, n_channels, n_bands = features.shape
+        
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        
+        features_reshaped = features.reshape(-1, n_bands)
+        features_scaled = scaler.fit_transform(features_reshaped)
+        
+        return features_scaled.reshape(n_epochs, n_channels, n_bands)
+    
+    def encode_to_spikes_poisson(self, features, time_steps=50):
+        n_epochs, _, _ = features.shape
+        
+        flat_features = features.reshape(n_epochs, -1) 
+        
+        rand_tensor = np.random.rand(time_steps, n_epochs, flat_features.shape[1])
+        
+        spikes = (rand_tensor < flat_features).astype(float)
+        
+        return spikes
+        
     def extract_events(self, eeg_raw):
-        events, _ = mne.events_from_annotations(eeg_raw)
-        return events
+        events, event_id_map = mne.events_from_annotations(eeg_raw)
+        return events, event_id_map
     
     def detect_bads_pyprep(self, eeg_raw):
         nd = NoisyChannels(eeg_raw)
@@ -329,8 +356,10 @@ def main():
                 )
 
                 epochs = pipeline.normalize_epochs_for_snn(epochs)
-            
-            
+                features = pipeline.select_important_frequency_bands(epochs)
+                features_scaled = pipeline.min_max_scale_features(features)
+                spikes = pipeline.encode_to_spikes_poisson(features_scaled)
+
             finally:
                 if hasattr(eeg_raw, '_temp_file_path'):
                     if os.path.exists(eeg_raw._temp_file_path):
