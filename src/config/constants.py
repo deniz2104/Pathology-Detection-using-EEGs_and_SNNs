@@ -1,0 +1,14 @@
+FOLDER_NAME : str = 'ds005516'
+SCOPES : list[str] = ['https://www.googleapis.com/auth/drive']
+FOLDER_TO_KEEP :str = 'participants'
+FORMATS_TO_KEEP : list[str] = ['.csv', '.tsv']
+SUBJECTS_PREFIX :str = 'sub-'
+ACCEPTED_TASKS : list[str] = ['RestingState', 'DespicableMe', 'ThePresent', 'FunwithFractals', 'DiaryOfAWimpyKid', 'symbolSearch']
+EEG_FOLDER : str = 'eeg'
+EEG_FILE_EXTENSION : str = '.set'
+EEG_FOLDER_LINKS_CSV : str = 'data/eeg_folder_links.csv'
+LOW_PASS_FILTER_HZ : float = 1.00
+HIGH_PASS_FILTER_HZ : float = 100.0
+FREQUENCY_SAMPLE_HZ : int = 250
+NOTCH_FILTER_FREQUENCIES : list[int] = [60, 120]
+RANDOM_SEED : int = 42
