@@ -5,6 +5,7 @@ google-api-python-client
 mne
 mne_icalabel
 torch
+snntorch
 pandas
 numpy
 seaborn
