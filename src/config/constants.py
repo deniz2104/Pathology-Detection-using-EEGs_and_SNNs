@@ -4,6 +4,7 @@ FOLDER_TO_KEEP :str = 'participants'
 FORMATS_TO_KEEP : list[str] = ['.csv', '.tsv']
 SUBJECTS_PREFIX :str = 'sub-'
 ACCEPTED_TASKS : list[str] = ['RestingState', 'DespicableMe', 'ThePresent', 'FunwithFractals', 'DiaryOfAWimpyKid', 'symbolSearch']
+DESIRED_CSV_TEST_FILE : str = 'target_participants.csv'
 EEG_FOLDER : str = 'eeg'
 EEG_FILE_EXTENSION : str = '.set'
 EEG_FOLDER_LINKS_CSV : str = 'data/eeg_folder_links.csv'

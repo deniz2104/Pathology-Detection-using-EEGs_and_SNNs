@@ -19,7 +19,7 @@ def list_files_in_folder(folder_name=FOLDER_NAME):
     while True:
         results = service.files().list(
             q=f"'{folder_id}' in parents",
-            fields="nextPageToken, files(id, name, mimeType)",
+            fields="nextPageToken, files(id, name, mimeType,modifiedTime)",
             pageSize=470,
             pageToken=page_token
         ).execute()
