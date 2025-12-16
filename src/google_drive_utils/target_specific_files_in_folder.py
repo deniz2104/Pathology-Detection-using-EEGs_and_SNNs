@@ -1,5 +1,5 @@
 from .list_files_in_target_folder import list_files_in_folder
-from config.constants import FOLDER_NAME, FOLDER_TO_KEEP, FORMATS_TO_KEEP, SUBJECTS_PREFIX
+from src.config.constants import FOLDER_NAME, FOLDER_TO_KEEP, FORMATS_TO_KEEP, SUBJECTS_PREFIX
 
 def target_specific_files_in_folder(folder_name=FOLDER_NAME):
     files = list_files_in_folder(folder_name)

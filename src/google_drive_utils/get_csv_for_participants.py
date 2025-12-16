@@ -1,5 +1,5 @@
 from .target_specific_files_in_folder import target_specific_files_in_folder
-from config.constants import DESIRED_CSV_TEST_FILE
+from src.config.constants import DESIRED_CSV_TEST_FILE
 
 def get_csv_for_participants():
     all_files = target_specific_files_in_folder()

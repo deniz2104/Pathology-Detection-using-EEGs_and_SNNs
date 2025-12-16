@@ -1,6 +1,6 @@
 from .get_google_drive_service import get_google_drive_service
 from .get_target_folder_from_google_drive import get_target_folder_from_google_drive
-from config.constants import FOLDER_NAME
+from src.config.constants import FOLDER_NAME
 
 def list_files_in_folder(folder_name=FOLDER_NAME):
     found_folders = get_target_folder_from_google_drive(folder_name)

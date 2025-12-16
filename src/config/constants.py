@@ -13,3 +13,7 @@ HIGH_PASS_FILTER_HZ : float = 100.0
 FREQUENCY_SAMPLE_HZ : int = 250
 NOTCH_FILTER_FREQUENCIES : list[int] = [60, 120]
 RANDOM_SEED : int = 42
+
+LOW_PRIORITY_TASKS : list[str] = ['ThePresent','DespicableMe','FunwithFractals','DiaryOfAWimpyKid']
+MEDIUM_PRIORITY_TASKS : list[str] = ['RestingState']
+HIGH_PRIORITY_TASKS : list[str] = ['symbolSearch']

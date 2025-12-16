@@ -1,7 +1,7 @@
 from .gather_list_of_subjects import get_list_of_subjects
 from .get_google_drive_service import get_google_drive_service
 from .get_target_folder_from_google_drive import get_target_folder_from_google_drive
-from config.constants import SUBJECTS_PREFIX,EEG_FOLDER, EEG_FOLDER_LINKS_CSV
+from src.config.constants import SUBJECTS_PREFIX,EEG_FOLDER, EEG_FOLDER_LINKS_CSV
 import pandas as pd
 
 def make_csv_file_to_store_eeg_links(subjects_data):
