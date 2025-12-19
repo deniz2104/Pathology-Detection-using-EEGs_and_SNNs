@@ -17,7 +17,14 @@ def main():
         df_labels: Ground truth DataFrame for evaluation
     """
     # Load labels
-    df_labels = fetch_content_from_csv_files()
+    try:
+        df_labels = fetch_content_from_csv_files()
+        if df_labels is None or len(df_labels) == 0:
+            raise ValueError("Failed to load label data from Google Drive")
+    except Exception as e:
+        print(f"FATAL ERROR: Could not fetch data from Google Drive: {e}")
+        print("Please check your internet connection and Google Drive credentials.")
+        raise
 
     # Split participants into train/test
     all_participant_ids = df_labels['participant_id'].unique()
@@ -83,7 +90,6 @@ def main():
     print(f"\nResults saved to final_predictions.csv")
     
     return training_history, df_labels
-
 
 if __name__ == "__main__":
     main()

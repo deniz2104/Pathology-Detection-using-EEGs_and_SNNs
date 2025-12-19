@@ -36,11 +36,11 @@ def evaluate_final_predictions(pred_csv_path="final_predictions.csv"):
         rmse = np.sqrt(mse)
         correlation = np.corrcoef(y_pred, y_true)[0, 1]
         
-        thresholds = [0.1, 0.25, 0.5, 1.0]
+        thresholds = [0.25, 0.5, 1.0]
         acc_results = {}
         for t in thresholds:
             acc = (abs_diff <= t).mean() * 100
-            acc_results[f'Accuracy < {t}'] = acc
+            acc_results[f'Acc < {t}'] = acc
             
         print(f"--- {name} ---")
         print(f"MAE  : {mae:.4f}")
