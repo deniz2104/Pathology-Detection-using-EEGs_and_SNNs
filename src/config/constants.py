@@ -1,3 +1,5 @@
+from pathlib import Path
+
 FOLDER_NAME : str = 'ds005516'
 SCOPES : list[str] = ['https://www.googleapis.com/auth/drive']
 FOLDER_TO_KEEP :str = 'participants'
@@ -13,7 +15,15 @@ HIGH_PASS_FILTER_HZ : float = 100.0
 FREQUENCY_SAMPLE_HZ : int = 250
 NOTCH_FILTER_FREQUENCIES : list[int] = [60, 120]
 RANDOM_SEED : int = 42
-
 LOW_PRIORITY_TASKS : list[str] = ['ThePresent','DespicableMe','FunwithFractals','DiaryOfAWimpyKid']
 MEDIUM_PRIORITY_TASKS : list[str] = ['RestingState']
 HIGH_PRIORITY_TASKS : list[str] = ['symbolSearch']
+WEIGHT_MAP = {'LOW': 1.0, 'MEDIUM': 2.0, 'HIGH': 3.0}
+BATCH_SIZE = 16
+LEARNING_RATE = 2e-4
+NUM_EPOCHS = 100
+HIDDEN_SIZE = 128  
+BETA = 0.9 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+ROOT_DIR = str(_REPO_ROOT / "preprocessed_participants")
+PLOTS_DIR = "plots"

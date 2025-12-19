@@ -1,0 +1,45 @@
+import numpy as np
+
+class EarlyStopping:
+    def __init__(self, patience=7, verbose=False, delta=0, restore_best_weights=True):
+        self.patience = patience
+        self.verbose = verbose
+        self.counter = 0
+        self.best_score = None
+        self.early_stop = False
+        self.val_loss_min = np.inf
+        self.delta = delta
+        self.restore_best_weights = restore_best_weights
+        self.best_model_state = None
+
+    def __call__(self, model, val_loss):
+        score = -val_loss
+
+        if self.best_score is None:
+            self.best_score = score
+            self.save_checkpoint(val_loss, model)
+        elif score < self.best_score + self.delta:
+            self.counter += 1
+            if self.verbose:
+                print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_score = score
+            self.save_checkpoint(val_loss, model)
+            self.counter = 0
+            
+        return self.early_stop
+
+    def save_checkpoint(self, val_loss, model):
+        if self.verbose:
+            print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).')
+        self.val_loss_min = val_loss
+        if self.restore_best_weights:
+            self.best_model_state = model.state_dict()
+
+    def restore(self, model):
+        if self.restore_best_weights and self.best_model_state is not None:
+            model.load_state_dict(self.best_model_state)
+            if self.verbose:
+                print("Restored best model weights.")

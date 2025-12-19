@@ -6,6 +6,10 @@ import io
 def get_important_columns_from_dataframe(df):
     return df[['participant_id','p_factor','attention','internalizing','externalizing']].dropna()
 
+def make_subject_id_uppercase(df):
+    df['participant_id'] = df['participant_id'].astype(str).str.upper()
+    return df
+
 def fetch_content_from_csv_files():
     service = get_google_drive_service()
     csv_files = get_csv_for_participants()
@@ -19,6 +23,7 @@ def fetch_content_from_csv_files():
         csv_string = file_content.decode('utf-8')
         df = pd.read_csv(io.StringIO(csv_string))
         df = get_important_columns_from_dataframe(df)
+        df = make_subject_id_uppercase(df)
             
     except Exception as e:
         print(f"Error processing {latest_modifie_csv_file['name']}: {e}")
